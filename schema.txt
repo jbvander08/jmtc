@@ -1,0 +1,186 @@
+CREATE SCHEMA "public";
+CREATE SCHEMA "neon_auth";
+CREATE TABLE "customer" (
+	"customer_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "customer_customer_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"fullname" varchar(100) NOT NULL,
+	"contactnumber" varchar(20),
+	"email" varchar(100)
+);
+CREATE TABLE "employee" (
+	"emp_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "employee_emp_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"user_id" integer CONSTRAINT "employee_user_id_key" UNIQUE,
+	"firstname" varchar(50) NOT NULL,
+	"lastname" varchar(50) NOT NULL,
+	"middlename" varchar(50),
+	"contactnumber" varchar(20),
+	"email" varchar(100)
+);
+CREATE TABLE "notification" (
+	"notification_id" integer PRIMARY KEY,
+	"sender_id" integer,
+	"receiver_role" varchar(20) NOT NULL,
+	"notif_type" varchar(30) NOT NULL,
+	"related_repair_id" integer,
+	"related_fuel_id" integer,
+	"message" text,
+	"timestamp" timestamp with time zone DEFAULT now(),
+	CONSTRAINT "notification_notif_type_check" CHECK (CHECK (((notif_type)::text = ANY ((ARRAY['Fuel'::character varying, 'Vehicle Issue'::character varying])::text[])))),
+	CONSTRAINT "notification_receiver_role_check" CHECK (CHECK (((receiver_role)::text = ANY ((ARRAY['Manager'::character varying, 'Shop'::character varying, 'Driver'::character varying, 'Admin'::character varying])::text[]))))
+);
+CREATE TABLE "repair" (
+	"repair_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "repair_repair_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"vehicle_id" integer,
+	"reported_by" integer,
+	"vehicle_issue" text NOT NULL,
+	"timestamp" timestamp DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE "repair_log" (
+	"repairlog_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "repair_log_repairlog_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"repair_id" integer,
+	"completed_by" integer,
+	"date_repaired" date NOT NULL
+);
+CREATE TABLE "reservation" (
+	"reservation_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "reservation_reservation_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"vehicle_id" integer,
+	"handled_by" integer,
+	"driver_id" integer,
+	"customer_id" integer,
+	"startdate" timestamp NOT NULL,
+	"enddate" timestamp NOT NULL,
+	"reserv_status" varchar(20),
+	"timestamp" timestamp DEFAULT CURRENT_TIMESTAMP,
+	CONSTRAINT "chk_reservation_status" CHECK (CHECK (((reserv_status)::text = ANY ((ARRAY['Upcoming'::character varying, 'Ongoing'::character varying, 'Completed'::character varying, 'Cancelled'::character varying])::text[])))),
+	CONSTRAINT "reservation_reserv_status_check" CHECK (CHECK (((reserv_status)::text = ANY ((ARRAY['Upcoming'::character varying, 'Ongoing'::character varying, 'Completed'::character varying])::text[]))))
+);
+CREATE TABLE "reservation_archive" (
+	"reservation_id" integer PRIMARY KEY,
+	"vehicle_id" integer,
+	"handled_by" integer NOT NULL,
+	"driver_id" integer,
+	"customer_id" integer,
+	"startdate" timestamp NOT NULL,
+	"enddate" timestamp NOT NULL,
+	"reserv_status" varchar(10) NOT NULL,
+	"timestamp" timestamp DEFAULT now(),
+	CONSTRAINT "reservation_archive_reserv_status_check" CHECK (CHECK (((reserv_status)::text = ANY ((ARRAY['Upcoming'::character varying, 'Ongoing'::character varying, 'Completed'::character varying, 'Cancelled'::character varying])::text[]))))
+);
+CREATE TABLE "reservation_log" (
+	"reservelog_id" integer PRIMARY KEY,
+	"reservation_id" integer NOT NULL,
+	"handled_by" integer NOT NULL,
+	"log_status" varchar(20) NOT NULL,
+	"timestamp" timestamp DEFAULT now()
+);
+CREATE TABLE "rfid_log" (
+	"log_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "rfid_log_log_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"vehicle_id" integer,
+	"amount_before" numeric(10, 2),
+	"amount_deducted" numeric(10, 2),
+	"amount_after" numeric(10, 2),
+	"timestamp" timestamp DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE "route" (
+	"route_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "route_route_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"vehicle_id" integer,
+	"to_location" varchar(100),
+	"odometerreading" numeric(10, 2)
+);
+CREATE TABLE "usage_log" (
+	"usage_id" serial PRIMARY KEY,
+	"vehicle_id" integer NOT NULL,
+	"reported_by" integer NOT NULL,
+	"previous_fuel" numeric,
+	"current_fuel" numeric,
+	"fuel_added" numeric,
+	"previous_odometer" numeric,
+	"current_odometer" numeric,
+	"mileage" numeric,
+	"timestamp" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE "user" (
+	"user_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "user_user_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"username" varchar(50) NOT NULL CONSTRAINT "user_username_key" UNIQUE,
+	"password" varchar(255) NOT NULL,
+	"role" varchar(20) NOT NULL,
+	"state" integer DEFAULT 0 NOT NULL,
+	"last_login" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+	CONSTRAINT "user_role_check" CHECK (CHECK (((role)::text = ANY ((ARRAY['Admin'::character varying, 'Manager'::character varying, 'Driver'::character varying, 'Shop'::character varying])::text[])))),
+	CONSTRAINT "user_state_check" CHECK (CHECK ((state = ANY (ARRAY[0, 1]))))
+);
+CREATE TABLE "vehicle" (
+	"vehicle_id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "vehicle_vehicle_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"brand" varchar(50),
+	"model" varchar(50),
+	"year" integer,
+	"plate_number" varchar(20) NOT NULL CONSTRAINT "vehicle_plate_number_key" UNIQUE,
+	"status" varchar(20) NOT NULL,
+	"daily_rate" numeric(10, 2) NOT NULL,
+	"rfid_balance" numeric(10, 2) DEFAULT '0',
+	CONSTRAINT "vehicle_status_check" CHECK (CHECK (((status)::text = ANY ((ARRAY['Reserved'::character varying, 'Under Repair'::character varying, 'Available'::character varying])::text[])))),
+	CONSTRAINT "vehicle_year_check" CHECK (CHECK ((year >= 1900)))
+);
+CREATE TABLE "vehicle_issues" (
+	"issue_id" serial PRIMARY KEY,
+	"vehicle_id" integer,
+	"reported_by" integer,
+	"issue_categories" jsonb,
+	"custom_issue" text,
+	"issue_description" text,
+	"reported_date" timestamp DEFAULT now(),
+	"status" varchar(20) DEFAULT 'pending',
+	"severity" varchar(20),
+	"maintenance_notes" text
+);
+CREATE TABLE "neon_auth"."users_sync" (
+	"raw_json" jsonb NOT NULL,
+	"id" text PRIMARY KEY GENERATED ALWAYS AS ((raw_json ->> 'id'::text)) STORED,
+	"name" text GENERATED ALWAYS AS ((raw_json ->> 'display_name'::text)) STORED,
+	"email" text GENERATED ALWAYS AS ((raw_json ->> 'primary_email'::text)) STORED,
+	"created_at" timestamp with time zone GENERATED ALWAYS AS (to_timestamp((trunc((((raw_json ->> 'signed_up_at_millis'::text))::bigint)::double precision) / (1000)::double precision))) STORED,
+	"updated_at" timestamp with time zone,
+	"deleted_at" timestamp with time zone
+);
+ALTER TABLE "employee" ADD CONSTRAINT "employee_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("user_id") ON DELETE SET NULL;
+ALTER TABLE "notification" ADD CONSTRAINT "notification_related_repair_id_fkey" FOREIGN KEY ("related_repair_id") REFERENCES "repair"("repair_id") ON DELETE CASCADE;
+ALTER TABLE "notification" ADD CONSTRAINT "notification_sender_id_fkey" FOREIGN KEY ("sender_id") REFERENCES "user"("user_id") ON DELETE SET NULL;
+ALTER TABLE "repair" ADD CONSTRAINT "repair_reported_by_fkey" FOREIGN KEY ("reported_by") REFERENCES "user"("user_id");
+ALTER TABLE "repair" ADD CONSTRAINT "repair_vehicle_id_fkey" FOREIGN KEY ("vehicle_id") REFERENCES "vehicle"("vehicle_id") ON DELETE CASCADE;
+ALTER TABLE "repair_log" ADD CONSTRAINT "repair_log_completed_by_fkey" FOREIGN KEY ("completed_by") REFERENCES "user"("user_id") ON DELETE SET NULL;
+ALTER TABLE "repair_log" ADD CONSTRAINT "repair_log_repair_id_fkey" FOREIGN KEY ("repair_id") REFERENCES "repair"("repair_id") ON DELETE CASCADE;
+ALTER TABLE "reservation" ADD CONSTRAINT "reservation_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "customer"("customer_id") ON DELETE SET NULL;
+ALTER TABLE "reservation" ADD CONSTRAINT "reservation_driver_id_fkey" FOREIGN KEY ("driver_id") REFERENCES "user"("user_id") ON DELETE SET NULL;
+ALTER TABLE "reservation" ADD CONSTRAINT "reservation_handled_by_fkey" FOREIGN KEY ("handled_by") REFERENCES "user"("user_id") ON DELETE SET NULL;
+ALTER TABLE "reservation" ADD CONSTRAINT "reservation_vehicle_id_fkey" FOREIGN KEY ("vehicle_id") REFERENCES "vehicle"("vehicle_id") ON DELETE CASCADE;
+ALTER TABLE "reservation_archive" ADD CONSTRAINT "reservation_archive_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "customer"("customer_id") ON DELETE SET NULL;
+ALTER TABLE "reservation_archive" ADD CONSTRAINT "reservation_archive_driver_id_fkey" FOREIGN KEY ("driver_id") REFERENCES "user"("user_id") ON DELETE SET NULL;
+ALTER TABLE "reservation_archive" ADD CONSTRAINT "reservation_archive_handled_by_fkey" FOREIGN KEY ("handled_by") REFERENCES "user"("user_id") ON DELETE SET NULL;
+ALTER TABLE "reservation_archive" ADD CONSTRAINT "reservation_archive_vehicle_id_fkey" FOREIGN KEY ("vehicle_id") REFERENCES "vehicle"("vehicle_id") ON DELETE SET NULL;
+ALTER TABLE "reservation_log" ADD CONSTRAINT "reservation_log_handled_by_fkey" FOREIGN KEY ("handled_by") REFERENCES "user"("user_id") ON DELETE SET NULL;
+ALTER TABLE "reservation_log" ADD CONSTRAINT "reservation_log_reservation_id_fkey" FOREIGN KEY ("reservation_id") REFERENCES "reservation"("reservation_id") ON DELETE CASCADE;
+ALTER TABLE "rfid_log" ADD CONSTRAINT "rfid_log_vehicle_id_fkey" FOREIGN KEY ("vehicle_id") REFERENCES "vehicle"("vehicle_id") ON DELETE CASCADE;
+ALTER TABLE "route" ADD CONSTRAINT "route_vehicle_id_fkey" FOREIGN KEY ("vehicle_id") REFERENCES "vehicle"("vehicle_id");
+ALTER TABLE "usage_log" ADD CONSTRAINT "usage_log_reported_by_fkey" FOREIGN KEY ("reported_by") REFERENCES "user"("user_id");
+ALTER TABLE "usage_log" ADD CONSTRAINT "usage_log_vehicle_id_fkey" FOREIGN KEY ("vehicle_id") REFERENCES "vehicle"("vehicle_id");
+ALTER TABLE "vehicle_issues" ADD CONSTRAINT "vehicle_issues_reported_by_fkey" FOREIGN KEY ("reported_by") REFERENCES "user"("user_id");
+ALTER TABLE "vehicle_issues" ADD CONSTRAINT "vehicle_issues_vehicle_id_fkey" FOREIGN KEY ("vehicle_id") REFERENCES "vehicle"("vehicle_id");
+CREATE UNIQUE INDEX "customer_pkey" ON "customer" ("customer_id");
+CREATE UNIQUE INDEX "employee_pkey" ON "employee" ("emp_id");
+CREATE UNIQUE INDEX "employee_user_id_key" ON "employee" ("user_id");
+CREATE UNIQUE INDEX "notification_pkey" ON "notification" ("notification_id");
+CREATE UNIQUE INDEX "repair_pkey" ON "repair" ("repair_id");
+CREATE UNIQUE INDEX "repair_log_pkey" ON "repair_log" ("repairlog_id");
+CREATE UNIQUE INDEX "reservation_pkey" ON "reservation" ("reservation_id");
+CREATE UNIQUE INDEX "reservation_archive_pkey" ON "reservation_archive" ("reservation_id");
+CREATE UNIQUE INDEX "reservation_log_pkey" ON "reservation_log" ("reservelog_id");
+CREATE UNIQUE INDEX "rfid_log_pkey" ON "rfid_log" ("log_id");
+CREATE UNIQUE INDEX "route_pkey" ON "route" ("route_id");
+CREATE UNIQUE INDEX "usage_log_pkey" ON "usage_log" ("usage_id");
+CREATE INDEX "idx_user_last_login" ON "user" ("last_login");
+CREATE UNIQUE INDEX "user_pkey" ON "user" ("user_id");
+CREATE UNIQUE INDEX "user_username_key" ON "user" ("username");
+CREATE UNIQUE INDEX "vehicle_pkey" ON "vehicle" ("vehicle_id");
+CREATE UNIQUE INDEX "vehicle_plate_number_key" ON "vehicle" ("plate_number");
+CREATE UNIQUE INDEX "vehicle_issues_pkey" ON "vehicle_issues" ("issue_id");
+CREATE INDEX "users_sync_deleted_at_idx" ON "neon_auth"."users_sync" ("deleted_at");
+CREATE UNIQUE INDEX "users_sync_pkey" ON "neon_auth"."users_sync" ("id");
