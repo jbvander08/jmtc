@@ -1,5 +1,5 @@
-import { Client } from "pg";
-import jwt from "jsonwebtoken";
+import { neon } from '@neondatabase/serverless';
+import jwt from 'jsonwebtoken';
 
 /**
  * Verifies a user's JWT token and checks if the user is logged in.
@@ -11,28 +11,24 @@ import jwt from "jsonwebtoken";
 export const verifyUser = async (token) => {
   if (!token) throw new Error("Missing token");
 
-  let client;
   try {
     // Verify token (throws if invalid or expired)
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    client = new Client({
-      connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    });
-    await client.connect();
+    // Initialize Neon SQL client
+    const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL);
 
     // Fetch user state
-    const res = await client.query(
+    const result = await sql(
       'SELECT state FROM "user" WHERE "user_ID" = $1',
       [decoded.user_ID]
     );
 
-    if (res.rows.length === 0) {
+    if (result.length === 0) {
       throw new Error("User not found");
     }
 
-    const userState = res.rows[0].state;
+    const userState = result[0].state;
 
     if (userState !== 1) {
       throw new Error("User is not logged in");
@@ -41,23 +37,23 @@ export const verifyUser = async (token) => {
     return decoded; // user is authenticated
   } catch (err) {
     // Optional: Force logout if token invalid or expired
-    if (client) {
+    if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
       try {
         const decoded = jwt.decode(token); // decode without verifying
         if (decoded?.user_ID) {
-          await client.query(
+          const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL);
+          await sql(
             'UPDATE "user" SET state = 0 WHERE "user_ID" = $1',
             [decoded.user_ID]
           );
         }
-      } catch (_) {
-        // ignore
+      } catch (updateError) {
+        // ignore update errors during cleanup
+        console.error('Failed to update user state:', updateError.message);
       }
     }
 
     // Throw the error for the API function to handle
     throw new Error(err.message || "Authentication failed");
-  } finally {
-    if (client) await client.end();
   }
 };

@@ -1,77 +1,116 @@
-import { Client } from "pg";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+// netlify/functions/login.cjs
+const { neon } = require('@neondatabase/serverless');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
-export const handler = async (event) => {
-  console.log("Login function called with:", event.body);
+exports.handler = async (event) => {
+  console.log("=== LOGIN FUNCTION START ===");
   
+  const headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+
+  // Handle OPTIONS preflight
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers,
+      body: "",
+    };
+  }
+
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
+      headers,
       body: JSON.stringify({ message: "Method not allowed" }),
     };
   }
 
-  let client;
   try {
-    const { username, password, force } = JSON.parse(event.body);
+    let body;
+    try {
+      body = JSON.parse(event.body);
+    } catch (parseError) {
+      console.error("JSON parse error:", parseError);
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ message: "Invalid JSON format" }),
+      };
+    }
+
+    const { username, password, force = false } = body;
+
+    console.log(`Login attempt for: ${username}`);
 
     if (!username || !password) {
       return {
         statusCode: 400,
+        headers,
         body: JSON.stringify({ message: "Missing username or password" }),
       };
     }
 
-    console.log("Attempting database connection...");
-    
-    // Use connection string directly (test with this first)
-    const connectionString = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
-    
-    if (!connectionString) {
-      console.error("No database connection string found");
+    // Validate environment variables
+    if (!process.env.DATABASE_URL && !process.env.NETLIFY_DATABASE_URL) {
+      console.error("No database URL found");
       return {
         statusCode: 500,
-        body: JSON.stringify({ message: "Database configuration error" }),
+        headers,
+        body: JSON.stringify({ 
+          message: "Server configuration error",
+          error: "Database URL not configured" 
+        }),
       };
     }
 
-    console.log("Connection string found, connecting...");
-    
-    client = new Client({
-      connectionString: connectionString,
-      ssl: {
-        rejectUnauthorized: false
-      }
-    });
-    
-    await client.connect();
-    console.log("Database connected successfully");
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET not set");
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({ 
+          message: "Server configuration error",
+          error: "JWT secret not configured" 
+        }),
+      };
+    }
 
-    // Fetch user by username
-    console.log(`Fetching user: ${username}`);
-    const res = await client.query('SELECT * FROM "user" WHERE username = $1', [username]);
+    // Initialize Neon connection
+    const connectionString = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
+    const sql = neon(connectionString);
     
-    if (res.rows.length === 0) {
+    // Fetch user with new syntax
+    console.log("Querying user...");
+    const users = await sql`
+      SELECT * FROM "user" 
+      WHERE username = ${username}
+    `;
+    
+    if (!users || users.length === 0) {
       console.log("User not found");
-      return { 
-        statusCode: 401, 
-        body: JSON.stringify({ message: "Invalid username or password" }) 
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ message: "Invalid username or password" }),
       };
     }
 
-    const user = res.rows[0];
-    console.log("User found:", user.user_id);
+    const user = users[0];
+    console.log(`User found: ID=${user.user_id}, Role=${user.role}`);
 
-    // Validate password
-    console.log("Validating password...");
-    const valid = await bcrypt.compare(password, user.password);
-    
-    if (!valid) {
+    // Validate password with bcrypt
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
       console.log("Invalid password");
-      return { 
-        statusCode: 401, 
-        body: JSON.stringify({ message: "Invalid username or password" }) 
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ message: "Invalid username or password" }),
       };
     }
 
@@ -81,6 +120,7 @@ export const handler = async (event) => {
         console.log("User already logged in elsewhere");
         return {
           statusCode: 403,
+          headers,
           body: JSON.stringify({
             message: "User is already logged in elsewhere",
             alreadyLoggedIn: true,
@@ -89,73 +129,67 @@ export const handler = async (event) => {
       } else {
         // Force logout previous session
         console.log("Force logging out previous session");
-        await client.query('UPDATE "user" SET state = 0 WHERE "user_id" = $1', [user.user_id]);
+        await sql`
+          UPDATE "user" 
+          SET state = 0 
+          WHERE user_id = ${user.user_id}
+        `;
       }
     }
 
-    // Set state to logged in
+    // Update user state to logged in
     console.log("Updating user state to logged in");
-    await client.query('UPDATE "user" SET state = 1 WHERE "user_id" = $1', [user.user_id]);
+    await sql`
+      UPDATE "user" 
+      SET state = 1 
+      WHERE user_id = ${user.user_id}
+    `;
 
-    // Check JWT_SECRET
-    if (!process.env.JWT_SECRET) {
-      console.error("JWT_SECRET not set");
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ message: "Server configuration error" }),
-      };
-    }
-
-    // Generate JWT token
+    // Generate JWT token with jwt library
     console.log("Generating JWT token");
+    const tokenPayload = {
+      user_ID: user.user_id,
+      user_id: user.user_id, // Include both for compatibility
+      username: user.username,
+      role: user.role,
+    };
+    
     const token = jwt.sign(
-      { 
-        user_id: user.user_id, 
-        role: user.role, 
-        username: user.username 
-      },
+      tokenPayload,
       process.env.JWT_SECRET,
-      { expiresIn: "2h" }
+      { expiresIn: '8h' }
     );
 
-    console.log("Login successful for user:", user.username);
+    console.log("✅ Login successful for:", user.username);
     
-    // Return user data + token (match frontend keys)
     return {
       statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        success: true,
+        token,
+        user_ID: user.user_id,
+        username: user.username,
+        role: user.role,
+        message: "Login successful",
+      }),
+    };
+
+  } catch (error) {
+    console.error("Login error:", error);
+    
+    return {
+      statusCode: 500,
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
       },
       body: JSON.stringify({
-        token,
-        user_ID: user.user_id,
-        username: user.username,
-        role: user.role,
+        message: "Internal server error",
+        error: error.message,
       }),
     };
-
-  } catch (err) {
-    console.error("Login error:", err);
-    return { 
-      statusCode: 500, 
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-      body: JSON.stringify({ 
-        message: "Server error",
-        error: err.message 
-      }) 
-    };
   } finally {
-    if (client) {
-      try {
-        await client.end();
-        console.log("Database connection closed");
-      } catch (endErr) {
-        console.error("Error closing connection:", endErr);
-      }
-    }
+    console.log("=== LOGIN FUNCTION END ===");
   }
 };

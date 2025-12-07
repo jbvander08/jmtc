@@ -1,48 +1,187 @@
-import { Client } from "pg";
-import jwt from "jsonwebtoken";
+// netlify/functions/auth.js
+import { neon } from '@neondatabase/serverless';
+import jwt from 'jsonwebtoken';
 
-export const handler = async (event, context, callback) => {
-  const authHeader = event.headers.authorization || "";
-  const token = authHeader.replace("Bearer ", "");
+export const handler = async (event, context) => {
+  console.log("=== AUTH FUNCTION START ===");
+  
+  // Enable CORS headers
+  const headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  };
 
-  if (!token) {
+  // Handle OPTIONS preflight
+  if (event.httpMethod === "OPTIONS") {
     return {
-      statusCode: 401,
-      body: JSON.stringify({ message: "No token provided" }),
+      statusCode: 200,
+      headers,
+      body: "",
     };
   }
 
-  let client;
+  // Extract token from Authorization header
+  const authHeader = event.headers.authorization || "";
+  const token = authHeader.replace("Bearer ", "");
+
+  console.log("Auth header present:", !!authHeader);
+  console.log("Token extracted:", token ? "Yes" : "No");
+
+  if (!token) {
+    console.log("No token provided");
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ 
+        authorized: false,
+        message: "No token provided" 
+      }),
+    };
+  }
+
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    client = new Client({
-      connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    });
-    await client.connect();
-
-    const res = await client.query('SELECT state FROM "user" WHERE "user_ID" = $1', [decoded.user_ID]);
-
-    if (res.rows.length === 0) {
-      return { statusCode: 401, body: JSON.stringify({ message: "User not found" }) };
+    // Check if JWT_SECRET is configured
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET not configured");
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({
+          authorized: false,
+          message: "Server configuration error"
+        }),
+      };
     }
 
-    const userState = res.rows[0].state;
+    // Verify JWT token
+    console.log("Verifying JWT token...");
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log("Token decoded successfully:", {
+      user_ID: decoded.user_ID || decoded.user_id,
+      username: decoded.username,
+      role: decoded.role
+    });
+
+    // Use user_ID or user_id (handle both cases)
+    const userId = decoded.user_ID || decoded.user_id;
+    
+    if (!userId) {
+      console.error("No user ID in token");
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({
+          authorized: false,
+          message: "Invalid token format"
+        }),
+      };
+    }
+
+    // Check for database connection string
+    if (!process.env.DATABASE_URL && !process.env.NETLIFY_DATABASE_URL) {
+      console.error("No database URL configured");
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({
+          authorized: false,
+          message: "Server configuration error"
+        }),
+      };
+    }
+
+    const connectionString = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
+    const sql = neon(connectionString);
+
+    // Check user state in database - NEW SYNTAX
+    console.log(`Checking user state for ID: ${userId}`);
+    const userResult = await sql`
+      SELECT state FROM "user" 
+      WHERE user_id = ${userId}
+    `;
+
+    if (userResult.length === 0) {
+      console.log("User not found in database");
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({
+          authorized: false,
+          message: "User not found"
+        }),
+      };
+    }
+
+    const userState = userResult[0].state;
+    console.log(`User state: ${userState}`);
 
     if (userState !== 1) {
-      return { statusCode: 403, body: JSON.stringify({ message: "Session expired or logged out" }) };
+      console.log("User is not logged in (state != 1)");
+      
+      // Optional: Update state to 0 if it's somehow not 0 already
+      if (userState !== 0) {
+        await sql`
+          UPDATE "user" 
+          SET state = 0 
+          WHERE user_id = ${userId}
+        `;
+      }
+      
+      return {
+        statusCode: 403,
+        headers,
+        body: JSON.stringify({
+          authorized: false,
+          message: "Session expired or logged out"
+        }),
+      };
     }
 
-    // Append user info to context for downstream functions
-    context.user = decoded;
+    console.log("✅ Authentication successful");
+    
+    // Prepare response
+    const response = {
+      authorized: true,
+      user: {
+        user_ID: userId,
+        username: decoded.username,
+        role: decoded.role
+      }
+    };
 
-    // Pass to next function
-    return callback(null, { authorized: true });
+    // For Netlify Functions middleware, we can't modify context directly
+    // Return the user data instead
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify(response),
+    };
+
   } catch (err) {
-    console.error("Auth error:", err);
-    return { statusCode: 401, body: JSON.stringify({ message: "Invalid token" }) };
+    console.error("Auth error:", err.message);
+    
+    // Handle specific JWT errors
+    let errorMessage = "Invalid token";
+    if (err.name === "TokenExpiredError") {
+      errorMessage = "Token expired";
+    } else if (err.name === "JsonWebTokenError") {
+      errorMessage = "Invalid token signature";
+    } else if (err.name === "NotBeforeError") {
+      errorMessage = "Token not active yet";
+    }
+
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({
+        authorized: false,
+        message: errorMessage,
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      }),
+    };
   } finally {
-    if (client) await client.end();
+    console.log("=== AUTH FUNCTION END ===");
   }
 };
