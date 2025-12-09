@@ -21,20 +21,19 @@ export default function ReservationDashboard() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      if (!response.ok) throw new Error("Failed to fetch reservations");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
 
       const data = await response.json();
+      console.log("Dashboard - Reservations loaded:", data);
       const reservations = data.reservations || [];
-      const now = new Date();
 
       const total = reservations.length;
-      const upcoming = reservations.filter((r) => new Date(r.startdate) > now).length;
-      const ongoing = reservations.filter((r) => {
-        const start = new Date(r.startdate);
-        const end = new Date(r.enddate);
-        return start <= now && end >= now;
-      }).length;
-      const completed = reservations.filter((r) => new Date(r.enddate) < now).length;
+      const upcoming = reservations.filter((r) => r.reserv_status === "Upcoming").length;
+      const ongoing = reservations.filter((r) => r.reserv_status === "Ongoing").length;
+      const completed = reservations.filter((r) => r.reserv_status === "Completed").length;
 
       setStats({ total, upcoming, ongoing, completed });
     } catch (err) {

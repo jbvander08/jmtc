@@ -23,13 +23,17 @@ export default function ReservationList({ user }) {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      if (!response.ok) throw new Error("Failed to fetch reservations");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
 
       const data = await response.json();
+      console.log("Reservations loaded:", data);
       setReservations(data.reservations || []);
     } catch (err) {
       console.error("Error fetching reservations:", err);
-      alert("Failed to load reservations. Please try again.");
+      alert(`Failed to load reservations: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -69,7 +73,12 @@ export default function ReservationList({ user }) {
     handleFormClose();
   };
 
-  const getReservationStatus = (startDate, endDate) => {
+  const getReservationStatus = (reservationStatus, startDate, endDate) => {
+    // Use database status if available, otherwise calculate from dates
+    if (reservationStatus) {
+      return reservationStatus.toLowerCase();
+    }
+    
     const now = new Date();
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -85,7 +94,7 @@ export default function ReservationList({ user }) {
       r.plate_number?.toLowerCase().includes(searchTerm.toLowerCase());
 
     if (filterStatus === "all") return matchesSearch;
-    return matchesSearch && getReservationStatus(r.startdate, r.enddate) === filterStatus;
+    return matchesSearch && getReservationStatus(r.reserv_status, r.startdate, r.enddate) === filterStatus;
   });
 
   const containerStyle = {
@@ -250,9 +259,9 @@ export default function ReservationList({ user }) {
           </thead>
           <tbody>
             {filteredReservations.map((res) => {
-              const status = getReservationStatus(res.startdate, res.enddate);
+              const status = getReservationStatus(res.reserv_status, res.startdate, res.enddate);
               return (
-                <tr key={res.id}>
+                <tr key={res.reservation_id}>
                   <td style={tdStyle}>{res.customer_name}</td>
                   <td style={tdStyle}>{res.plate_number}</td>
                   <td style={tdStyle}>{new Date(res.startdate).toLocaleDateString()}</td>
@@ -268,7 +277,7 @@ export default function ReservationList({ user }) {
                     <button
                       style={actionButtonStyle("#3b82f6")}
                       onClick={() => {
-                        setEditingId(res.id);
+                        setEditingId(res.reservation_id);
                         setShowForm(true);
                       }}
                     >
@@ -276,7 +285,7 @@ export default function ReservationList({ user }) {
                     </button>
                     <button
                       style={actionButtonStyle("#ef4444")}
-                      onClick={() => handleDeleteReservation(res.id)}
+                      onClick={() => handleDeleteReservation(res.reservation_id)}
                     >
                       Delete
                     </button>

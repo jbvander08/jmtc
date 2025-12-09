@@ -23,13 +23,17 @@ export default function VehicleList({ user }) {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      if (!response.ok) throw new Error("Failed to fetch vehicles");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
 
       const data = await response.json();
+      console.log("Vehicles loaded:", data);
       setVehicles(data.vehicles || []);
     } catch (err) {
       console.error("Error fetching vehicles:", err);
-      alert("Failed to load vehicles. Please try again.");
+      alert(`Failed to load vehicles: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -52,10 +56,10 @@ export default function VehicleList({ user }) {
       if (!response.ok) throw new Error("Failed to delete vehicle");
 
       setRefreshTrigger((prev) => prev + 1);
-      alert("Vehicle archived successfully!");
+      alert("Vehicle deleted successfully!");
     } catch (err) {
       console.error("Error deleting vehicle:", err);
-      alert("Failed to archive vehicle. Please try again.");
+      alert("Failed to delete vehicle. Please try again.");
     }
   };
 
@@ -76,8 +80,7 @@ export default function VehicleList({ user }) {
       v.model?.toLowerCase().includes(searchTerm.toLowerCase());
 
     if (filterStatus === "all") return matchesSearch;
-    if (filterStatus === "archived") return matchesSearch && v.archived;
-    return matchesSearch && v.status === filterStatus && !v.archived;
+    return matchesSearch && v.status === filterStatus;
   });
 
   const containerStyle = {
@@ -148,19 +151,23 @@ export default function VehicleList({ user }) {
     borderBottom: "1px solid #eee",
   };
 
-  const statusBadgeStyle = (status) => ({
-    padding: "3px 8px",
-    borderRadius: "12px",
-    fontSize: "0.75rem",
-    fontWeight: "bold",
-    background:
-      status === "available"
-        ? "#10b981"
-        : status === "in_shop"
-          ? "#ef4444"
-          : "#9ca3af",
-    color: "#fff",
-  });
+  const statusBadgeStyle = (status) => {
+    const statusLower = status?.toLowerCase() || "";
+    let bgColor = "#9ca3af"; // default gray
+    
+    if (statusLower === "available") bgColor = "#10b981";
+    if (statusLower === "reserved") bgColor = "#e5b038";
+    if (statusLower === "under repair") bgColor = "#ef4444";
+    
+    return {
+      padding: "3px 8px",
+      borderRadius: "12px",
+      fontSize: "0.75rem",
+      fontWeight: "bold",
+      background: bgColor,
+      color: "#fff",
+    };
+  };
 
   const actionButtonStyle = (color) => ({
     padding: "4px 8px",
@@ -184,7 +191,7 @@ export default function VehicleList({ user }) {
           ← Back to Vehicles
         </button>
         <VehicleForm
-          vehicle={editingId ? vehicles.find((v) => v.id === editingId) : null}
+          vehicle={editingId ? vehicles.find((v) => v.vehicle_id === editingId) : null}
           onSuccess={handleFormSuccess}
         />
       </div>
@@ -216,9 +223,9 @@ export default function VehicleList({ user }) {
           style={{ padding: "8px 10px", borderRadius: "4px", border: "1px solid #ddd", fontSize: "0.85rem" }}
         >
           <option value="all">All</option>
-          <option value="available">Available</option>
-          <option value="in_shop">In Shop</option>
-          <option value="archived">Archived</option>
+          <option value="Available">Available</option>
+          <option value="Reserved">Reserved</option>
+          <option value="Under Repair">Under Repair</option>
         </select>
       </div>
 
@@ -233,7 +240,6 @@ export default function VehicleList({ user }) {
               <th style={thStyle}>Plate Number</th>
               <th style={thStyle}>Brand</th>
               <th style={thStyle}>Model</th>
-              <th style={thStyle}>Type</th>
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Odometer</th>
               <th style={thStyle}>Actions</th>
@@ -241,15 +247,13 @@ export default function VehicleList({ user }) {
           </thead>
           <tbody>
             {filteredVehicles.map((vehicle) => (
-              <tr key={vehicle.id}>
+              <tr key={vehicle.vehicle_id}>
                 <td style={tdStyle}>{vehicle.plate_number}</td>
                 <td style={tdStyle}>{vehicle.brand}</td>
                 <td style={tdStyle}>{vehicle.model}</td>
-                <td style={tdStyle}>{vehicle.vehicle_type}</td>
                 <td style={tdStyle}>
                   <span style={statusBadgeStyle(vehicle.status)}>
-                    {vehicle.status.charAt(0).toUpperCase() +
-                      vehicle.status.slice(1).replace("_", " ")}
+                    {vehicle.status}
                   </span>
                 </td>
                 <td style={tdStyle}>
@@ -259,7 +263,7 @@ export default function VehicleList({ user }) {
                   <button
                     style={actionButtonStyle("#3b82f6")}
                     onClick={() => {
-                      setEditingId(vehicle.id);
+                      setEditingId(vehicle.vehicle_id);
                       setShowForm(true);
                     }}
                   >
@@ -267,9 +271,9 @@ export default function VehicleList({ user }) {
                   </button>
                   <button
                     style={actionButtonStyle("#ef4444")}
-                    onClick={() => handleDeleteVehicle(vehicle.id)}
+                    onClick={() => handleDeleteVehicle(vehicle.vehicle_id)}
                   >
-                    {vehicle.archived ? "Restore" : "Archive"}
+                    Delete
                   </button>
                 </td>
               </tr>

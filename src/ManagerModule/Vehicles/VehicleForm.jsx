@@ -5,8 +5,7 @@ export default function VehicleForm({ vehicle, onSuccess }) {
     brand: vehicle?.brand || "",
     model: vehicle?.model || "",
     plate_number: vehicle?.plate_number || "",
-    vehicle_type: vehicle?.vehicle_type || "sedan",
-    status: vehicle?.status || "available",
+    status: vehicle?.status || "Available",
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -34,7 +33,7 @@ export default function VehicleForm({ vehicle, onSuccess }) {
         ? "/.netlify/functions/updateVehicle"
         : "/.netlify/functions/createVehicle";
 
-      const body = vehicle ? { ...formData, id: vehicle.id } : formData;
+      const body = vehicle ? { ...formData, vehicle_id: vehicle.vehicle_id } : formData;
       const method = vehicle ? "PUT" : "POST";
 
       const response = await fetch(url, {
@@ -190,24 +189,6 @@ export default function VehicleForm({ vehicle, onSuccess }) {
         </div>
 
         <div style={formGroupStyle}>
-          <label style={labelStyle}>Vehicle Type</label>
-          <select
-            name="vehicle_type"
-            value={formData.vehicle_type}
-            onChange={handleChange}
-            style={selectStyle}
-          >
-            <option value="sedan">Sedan</option>
-            <option value="suv">SUV</option>
-            <option value="truck">Truck</option>
-            <option value="van">Van</option>
-            <option value="hatchback">Hatchback</option>
-            <option value="coupe">Coupe</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-
-        <div style={formGroupStyle}>
           <label style={labelStyle}>Status</label>
           <select
             name="status"
@@ -215,8 +196,8 @@ export default function VehicleForm({ vehicle, onSuccess }) {
             onChange={handleChange}
             style={selectStyle}
           >
-            <option value="available">Available</option>
-            <option value="in_shop">In Shop</option>
+            <option value="Available">Available</option>
+            <option value="Under Repair">Under Repair</option>
           </select>
         </div>
 

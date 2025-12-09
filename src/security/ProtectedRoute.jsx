@@ -25,7 +25,7 @@ export default function ProtectedRoute({ children, allowedRoles = [] }) {
 
   // Check role if specified - match EXACT case
   if (allowedRoles.length > 0) {
-    const userRole = user.role; // This should be "Admin", "Driver", "Shop", "Manager"
+    const userRole = user.role; // This should be "Admin", "Driver", "Shop"
     
     if (!allowedRoles.includes(userRole)) {
       // Redirect based on actual role

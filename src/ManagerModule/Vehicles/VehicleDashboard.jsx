@@ -3,9 +3,9 @@ import { useState, useEffect } from "react";
 export default function VehicleDashboard() {
   const [stats, setStats] = useState({
     total: 0,
-    active: 0,
-    inShop: 0,
-    archived: 0,
+    available: 0,
+    reserved: 0,
+    underRepair: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -21,17 +21,21 @@ export default function VehicleDashboard() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      if (!response.ok) throw new Error("Failed to fetch vehicles");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
 
       const data = await response.json();
+      console.log("Dashboard - Vehicles loaded:", data);
       const vehicles = data.vehicles || [];
 
       const total = vehicles.length;
-      const active = vehicles.filter((v) => v.status === "available" && !v.archived).length;
-      const inShop = vehicles.filter((v) => v.status === "in_shop" && !v.archived).length;
-      const archived = vehicles.filter((v) => v.archived).length;
+      const available = vehicles.filter((v) => v.status === "Available").length;
+      const reserved = vehicles.filter((v) => v.status === "Reserved").length;
+      const underRepair = vehicles.filter((v) => v.status === "Under Repair").length;
 
-      setStats({ total, active, inShop, archived });
+      setStats({ total, available, reserved, underRepair });
     } catch (err) {
       console.error("Error fetching stats:", err);
     } finally {
@@ -79,16 +83,16 @@ export default function VehicleDashboard() {
           <div style={numberStyle}>{stats.total}</div>
         </div>
         <div style={{ ...cardStyle, borderTop: "4px solid #10b981" }}>
-          <div style={labelStyle}>Active</div>
-          <div style={numberStyle}>{stats.active}</div>
+          <div style={labelStyle}>Available</div>
+          <div style={numberStyle}>{stats.available}</div>
+        </div>
+        <div style={{ ...cardStyle, borderTop: "4px solid #e5b038" }}>
+          <div style={labelStyle}>Reserved</div>
+          <div style={numberStyle}>{stats.reserved}</div>
         </div>
         <div style={{ ...cardStyle, borderTop: "4px solid #ef4444" }}>
-          <div style={labelStyle}>In Shop</div>
-          <div style={numberStyle}>{stats.inShop}</div>
-        </div>
-        <div style={{ ...cardStyle, borderTop: "4px solid #9ca3af" }}>
-          <div style={labelStyle}>Archived</div>
-          <div style={numberStyle}>{stats.archived}</div>
+          <div style={labelStyle}>Under Repair</div>
+          <div style={numberStyle}>{stats.underRepair}</div>
         </div>
       </div>
     </div>

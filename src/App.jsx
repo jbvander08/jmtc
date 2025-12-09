@@ -45,7 +45,7 @@ function App() {
               </ProtectedRoute>
             } 
           />
-          
+
           {/* Manager route - only accessible to users with manager role */}
           <Route 
             path="/manager/*" 
@@ -88,12 +88,16 @@ function RoleBasedRedirect() {
 
   switch (user.role) {
     case "Admin":
+    case "admin":
       return <Navigate to="/admin" replace />;
     case "Driver":
+    case "driver":
       return <Navigate to="/driver" replace />;
     case "Shop":
+    case "shop":
       return <Navigate to="/shop" replace />;
     case "Manager":
+    case "manager":
       return <Navigate to="/manager" replace />;
     default:
       return <Navigate to="/login" replace />;

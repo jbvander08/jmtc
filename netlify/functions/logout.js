@@ -1,8 +1,10 @@
-// netlify/functions/logout.js
+// netlify/functions/logout.cjs
 import { neon } from '@neondatabase/serverless';
 import jwt from 'jsonwebtoken';
 
 export const handler = async (event) => {
+  console.log("=== LOGOUT FUNCTION START ===");
+  
   // Enable CORS
   const headers = {
     "Content-Type": "application/json",
@@ -13,6 +15,7 @@ export const handler = async (event) => {
 
   // Handle OPTIONS preflight
   if (event.httpMethod === "OPTIONS") {
+    console.log("OPTIONS preflight request");
     return {
       statusCode: 200,
       headers,
@@ -21,6 +24,7 @@ export const handler = async (event) => {
   }
 
   if (event.httpMethod !== "POST") {
+    console.log(`Method not allowed: ${event.httpMethod}`);
     return {
       statusCode: 405,
       headers,
@@ -32,7 +36,6 @@ export const handler = async (event) => {
   const authHeader = event.headers.authorization || "";
   const token = authHeader.replace("Bearer ", "");
 
-  console.log("=== LOGOUT FUNCTION START ===");
   console.log("Auth header present:", !!authHeader);
   console.log("Token extracted:", token ? "Yes" : "No");
 
@@ -69,7 +72,8 @@ export const handler = async (event) => {
       console.log("Token verified successfully:", {
         user_id: decoded.user_id || decoded.user_ID,
         username: decoded.username,
-        role: decoded.role
+        role: decoded.role,
+        iat: decoded.iat ? new Date(decoded.iat * 1000).toISOString() : 'No iat'
       });
     } catch (verifyError) {
       // If verification fails (expired, invalid), try to decode without verification
@@ -91,7 +95,8 @@ export const handler = async (event) => {
       console.log("Token decoded (not verified):", {
         user_id: decoded.user_id || decoded.user_ID,
         username: decoded.username,
-        role: decoded.role
+        role: decoded.role,
+        iat: decoded.iat ? new Date(decoded.iat * 1000).toISOString() : 'No iat'
       });
     }
 
@@ -128,21 +133,23 @@ export const handler = async (event) => {
     const connectionString = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
     const sql = neon(connectionString);
 
-    // Update user state to 0 (logged out) - NEW SYNTAX
+    // Update user state to 0 (logged out) AND update last_login to prevent stale token re-use
     console.log("Updating user state to logged out...");
     const updateResult = await sql`
       UPDATE "user" 
-      SET state = 0 
+      SET state = 0, last_login = NOW()
       WHERE user_id = ${userId}
-      RETURNING user_id, username, state
+      RETURNING user_id, username, state, last_login
     `;
 
     if (updateResult.length === 0) {
       console.warn(`User ${userId} not found in database`);
       // Still return success since the frontend will clear localStorage anyway
     } else {
-      console.log(`User ${updateResult[0].username} logged out successfully`);
-      console.log("Updated state:", updateResult[0].state);
+      const updatedUser = updateResult[0];
+      console.log(`User ${updatedUser.username} logged out successfully`);
+      console.log("Updated state:", updatedUser.state);
+      console.log("Updated last_login:", updatedUser.last_login ? new Date(updatedUser.last_login).toISOString() : 'null');
     }
 
     console.log("✅ Logout successful");
@@ -160,6 +167,7 @@ export const handler = async (event) => {
 
   } catch (err) {
     console.error("Logout error:", err);
+    console.error("Error stack:", err.stack);
     
     return {
       statusCode: 500,
@@ -167,7 +175,7 @@ export const handler = async (event) => {
       body: JSON.stringify({ 
         success: false,
         message: "Server error during logout",
-        error: err.message 
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
       }),
     };
   } finally {

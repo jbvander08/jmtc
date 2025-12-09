@@ -1,3 +1,4 @@
+// components/Notice.jsx
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../security/AuthContext";
 

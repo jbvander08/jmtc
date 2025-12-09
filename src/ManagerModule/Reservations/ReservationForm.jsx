@@ -35,13 +35,17 @@ export default function ReservationForm({ reservation, onSuccess }) {
       setLoading(true);
       const token = localStorage.getItem("jmtc_token");
 
-      // Fetch customers - implement this Netlify function
+      // Fetch customers
       const customersResponse = await fetch("/.netlify/functions/getCustomers", {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (customersResponse.ok) {
         const data = await customersResponse.json();
+        console.log("Customers loaded:", data);
         setCustomers(data.customers || []);
+      } else {
+        const errorData = await customersResponse.json();
+        console.error("Failed to fetch customers:", errorData);
       }
 
       // Fetch vehicles
@@ -50,7 +54,11 @@ export default function ReservationForm({ reservation, onSuccess }) {
       });
       if (vehiclesResponse.ok) {
         const data = await vehiclesResponse.json();
+        console.log("Vehicles loaded:", data);
         setVehicles(data.vehicles || []);
+      } else {
+        const errorData = await vehiclesResponse.json();
+        console.error("Failed to fetch vehicles:", errorData);
       }
     } catch (err) {
       console.error("Error fetching data:", err);
@@ -219,20 +227,15 @@ export default function ReservationForm({ reservation, onSuccess }) {
       <form onSubmit={handleSubmit}>
         <div style={formGroupStyle}>
           <label style={labelStyle}>Customer *</label>
-          <select
+          <input
             name="customer_id"
             value={formData.customer_id}
             onChange={handleChange}
-            style={selectStyle}
+            style={inputStyle}
+            placeholder="Customer Name"
             required
-          >
-            <option value="">Select a customer</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.phone || "No phone"})
-              </option>
-            ))}
-          </select>
+          />
+          
         </div>
 
         <div style={formGroupStyle}>
@@ -246,9 +249,8 @@ export default function ReservationForm({ reservation, onSuccess }) {
           >
             <option value="">Select a vehicle</option>
             {vehicles
-              .filter((v) => !v.archived)
               .map((v) => (
-                <option key={v.id} value={v.id}>
+                <option key={v.vehicle_id} value={v.vehicle_id}>
                   {v.plate_number} - {v.brand} {v.model}
                 </option>
               ))}

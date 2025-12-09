@@ -1,4 +1,4 @@
-// netlify/functions/auth.js
+// netlify/functions/auth.cjs
 import { neon } from '@neondatabase/serverless';
 import jwt from 'jsonwebtoken';
 
@@ -61,7 +61,8 @@ export const handler = async (event, context) => {
     console.log("Token decoded successfully:", {
       user_ID: decoded.user_ID || decoded.user_id,
       username: decoded.username,
-      role: decoded.role
+      role: decoded.role,
+      iat: decoded.iat ? new Date(decoded.iat * 1000).toISOString() : 'No iat'
     });
 
     // Use user_ID or user_id (handle both cases)
@@ -95,10 +96,11 @@ export const handler = async (event, context) => {
     const connectionString = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
     const sql = neon(connectionString);
 
-    // Check user state in database - NEW SYNTAX
+    // Check user state AND last_login in database - NEW SYNTAX
     console.log(`Checking user state for ID: ${userId}`);
     const userResult = await sql`
-      SELECT state FROM "user" 
+      SELECT state, last_login 
+      FROM "user" 
       WHERE user_id = ${userId}
     `;
 
@@ -115,7 +117,34 @@ export const handler = async (event, context) => {
     }
 
     const userState = userResult[0].state;
+    const lastLogin = userResult[0].last_login;
+    
     console.log(`User state: ${userState}`);
+    console.log(`Last login: ${lastLogin ? new Date(lastLogin).toISOString() : 'Never'}`);
+    console.log(`Token iat: ${decoded.iat ? new Date(decoded.iat * 1000).toISOString() : 'No iat'}`);
+
+    // Check if token was issued BEFORE the last login (stale session)
+    if (decoded.iat && lastLogin) {
+      const tokenIssuedAt = decoded.iat * 1000; // Convert to milliseconds
+      const lastLoginTime = new Date(lastLogin).getTime();
+      
+      console.log(`Token issued at (ms): ${tokenIssuedAt}`);
+      console.log(`Last login time (ms): ${lastLoginTime}`);
+      console.log(`Token is older than last login: ${tokenIssuedAt < lastLoginTime}`);
+      
+      // If token is older than the last login, it's a stale session
+      if (tokenIssuedAt < lastLoginTime) {
+        console.log("Stale session detected - token issued before last login");
+        return {
+          statusCode: 403,
+          headers,
+          body: JSON.stringify({
+            authorized: false,
+            message: "Session terminated - Another login detected"
+          }),
+        };
+      }
+    }
 
     if (userState !== 1) {
       console.log("User is not logged in (state != 1)");
